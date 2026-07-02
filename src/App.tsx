@@ -111,6 +111,28 @@ export default function App() {
     setPassword(`${randAdj}-${randWord}-${randNum}`);
   };
 
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!compileResult?.downloadUrl || !compileResult?.filename) return;
+    
+    try {
+      const response = await fetch(compileResult.downloadUrl);
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = compileResult.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error downloading file:", err);
+      alert("Failed to download file. Please try again.");
+    }
+  };
+
   // Compile Trigger
   const handleCompile = async () => {
     setIsCompiling(true);
@@ -536,6 +558,7 @@ export default function App() {
                       <a 
                         href={compileResult.downloadUrl}
                         download={compileResult.filename}
+                        onClick={handleDownload}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs px-4 py-2.5 rounded-lg flex items-center gap-1.5 shadow-lg shadow-emerald-500/10 transition cursor-pointer shrink-0"
                       >
                         <Download className="h-4 w-4" />

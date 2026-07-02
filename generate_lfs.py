@@ -563,9 +563,6 @@ def main():
         ap_ssid = "{ap_ssid}"
         ap_password = "{ap_password}"
         start_ap_portal(ap_ssid, ap_password)
-
-if __name__ == "__main__":
-    main()
 """
 
     # We will write the index.html template
@@ -586,39 +583,37 @@ if __name__ == "__main__":
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            box-sizing: border-box;
         }}
         .container {{
-            width: 100%;
-            max-width: 440px;
             background-color: #1e293b;
-            padding: 2.5rem 2rem;
-            border-radius: 1.25rem;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+            border-radius: 1rem;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
             border: 1px solid #334155;
         }}
         .header {{
             text-align: center;
-            margin-bottom: 2.5rem;
+            margin-bottom: 2rem;
         }}
         .logo {{
-            font-size: 2.5rem;
+            font-size: 3rem;
             margin-bottom: 0.5rem;
         }}
         h1 {{
             font-size: 1.5rem;
-            font-weight: 600;
-            color: #38bdf8;
+            font-weight: 700;
             margin: 0 0 0.5rem 0;
         }}
         p {{
-            font-size: 0.875rem;
             color: #94a3b8;
-            margin: 0;
+            font-size: 0.875rem;
             line-height: 1.5;
+            margin: 0;
         }}
         .form-group {{
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.25rem;
         }}
         label {{
             display: block;
@@ -632,7 +627,7 @@ if __name__ == "__main__":
             padding: 0.75rem 1rem;
             background-color: #0f172a;
             border: 1px solid #475569;
-            border-radius: 0.625rem;
+            border-radius: 0.5rem;
             color: #f8fafc;
             font-size: 1rem;
             box-sizing: border-box;
@@ -700,8 +695,7 @@ if __name__ == "__main__":
         </div>
     </div>
 </body>
-</html>
-"""
+</html>"""
 
     # 3. Format and Mount LittleFS filesystem in-memory
     print("Formatting and writing LittleFS filesystem image...")
@@ -732,22 +726,15 @@ if __name__ == "__main__":
     print(f"Generated LittleFS filesystem image of size: {len(lfs_buffer)} bytes.")
 
     # 4. Generate the UF2 representation of our LittleFS filesystem
-    print("Generating UF2 blocks for filesystem image...")
-    uf2_blocks = []
-    
-    # Each UF2 block holds 256 bytes of payload.
-    # Therefore, we chunk our LittleFS filesystem buffer into 256-byte pieces.
-    total_blocks = len(lfs_buffer) // 256
-    
     print("Combining base MicroPython interpreter with FileSystem UF2...")
     with open(base_uf2_path, "rb") as f:
         base_uf2_bytes = f.read()
-
+        
     import collections
     fam_counts = collections.Counter()
     all_blocks = []
     
-    # Parse base UF2
+    # Parse base UF2 and group by family
     for i in range(len(base_uf2_bytes) // 512):
         b = bytearray(base_uf2_bytes[i*512 : i*512+512])
         all_blocks.append(b)
@@ -756,31 +743,40 @@ if __name__ == "__main__":
         
     # Determine the primary family ID (the one with the most blocks)
     main_fam = fam_counts.most_common(1)[0][0]
+    base_main_blocks_count = fam_counts[main_fam]
     
-    # Generate FS UF2 blocks with the correct main_fam and dummy block numbers for now
+    # Generate FS UF2 blocks
     total_fs_blocks = len(lfs_buffer) // 256
-    for block_no in range(total_fs_blocks):
-        address = 0x10000000 + cfg["fs_offset"] + (block_no * 256)
-        chunk = lfs_buffer[block_no * 256 : (block_no + 1) * 256]
-        block_bytes = make_uf2_block(address, chunk, 0, 0, main_fam)
-        all_blocks.append(bytearray(block_bytes))
-        
-    # Now sequence all blocks that have the main family ID
-    main_blocks = [b for b in all_blocks if struct.unpack('<I', b[28:32])[0] == main_fam]
-    total_main = len(main_blocks)
+    total_main_blocks = base_main_blocks_count + total_fs_blocks
     
-    for i, b in enumerate(main_blocks):
-        struct.pack_into('<I', b, 20, i)              # block_no
-        struct.pack_into('<I', b, 24, total_main)     # total_blocks
-
+    # 1. Update the total_blocks for all EXISTING blocks of main_fam
+    for b in all_blocks:
+        fam = struct.unpack('<I', b[28:32])[0]
+        if fam == main_fam:
+            struct.pack_into('<I', b, 24, total_main_blocks)
+            
+    # 2. Append new FS blocks with continuing block_no
+    for i in range(total_fs_blocks):
+        block_no = base_main_blocks_count + i
+        address = 0x10000000 + cfg["fs_offset"] + (i * 256)
+        chunk = lfs_buffer[i * 256 : (i + 1) * 256]
+        
+        block_bytes = bytearray(make_uf2_block(address, chunk, block_no, total_main_blocks, main_fam))
+        
+        # Ensure family ID flag is set
+        flags = struct.unpack('<I', block_bytes[8:12])[0]
+        struct.pack_into('<I', block_bytes, 8, flags | 0x2000)
+        
+        all_blocks.append(block_bytes)
+        
     print(f"FileSystem UF2 size: {total_fs_blocks * 512} bytes.")
     
     # 6. Write final result
     with open(output_path, "wb") as f:
         for b in all_blocks:
             f.write(b)
-        
-    print(f"SUCCESS: Combined UF2 written to: {output_path} with {total_main} main blocks (Family {hex(main_fam)}).")
+            
+    print(f"SUCCESS: Combined UF2 written to: {output_path} with {total_main_blocks} main blocks (Family {hex(main_fam)}).")
 
 if __name__ == "__main__":
     main()

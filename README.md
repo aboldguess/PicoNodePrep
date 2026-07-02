@@ -86,7 +86,9 @@ When flashing custom filesystem overlays (such as our LittleFS blocks) alongside
 
 If the family ID is incorrect, the Pico's ROM bootloader will successfully flash the MicroPython interpreter blocks (which have correct IDs in the base binary) but will **silently ignore and discard** the custom filesystem blocks. This results in the board booting up into a raw MicroPython state with an empty/corrupted filesystem, preventing `boot.py` or `main.py` from executing and causing the onboard setup LED/AP portal to fail to start.
 
-The correct, verified Family IDs utilized in this builder are:
+The correct, verified Family IDs utilized in this builder are automatically extracted from the base firmware to ensure absolute compatibility:
 - **RP2040 (Raspberry Pi Pico W)**: `0xe48bff56` (Standard RP2040 chip)
-- **RP2350 (Raspberry Pi Pico 2 W)**: `0xe48bff57` (Unified RP2350 microcontroller)
+- **RP2350 (Raspberry Pi Pico 2 W)**: `0xe48bff59` (RP2350 Secure ARM image). Note that some base firmwares also inject an `0xe48bff57` block for absolute unpartitioned downloads.
+
+> **Update:** PicoDeploy now automatically reads the primary family ID from the target MicroPython base UF2 and enforces it across all generated filesystem blocks. It additionally sequences all blocks into a unified, monotonic counter, preventing the RP2350's multi-family UF2 parser from aborting early.
 
