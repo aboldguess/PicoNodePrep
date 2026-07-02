@@ -1,0 +1,6 @@
+{
+  "name": "PicoDeploy",
+  "description": "Customizable MicroPython firmware builder with softAP onboarding web portal, sticker label generation, and interactive workflow simulator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
