@@ -283,9 +283,13 @@ def start_ap_portal(ap_ssid, ap_password, setup_ip):
     ap.active(True)
     ap.ifconfig((setup_ip, '255.255.255.0', setup_ip, '8.8.8.8'))
     try:
-        ap.config(essid=ap_ssid, password=ap_password, security=3 if len(ap_password) >= 8 else 0)
+        sec = network.AUTH_WPA2_AESPSK if len(ap_password) >= 8 else 0
+        ap.config(essid=ap_ssid, password=ap_password, security=sec)
     except Exception:
-        ap.config(essid=ap_ssid, password=ap_password)
+        try:
+            ap.config(essid=ap_ssid, password=ap_password, security=0x00200004 if len(ap_password) >= 8 else 0)
+        except Exception:
+            ap.config(essid=ap_ssid, password=ap_password)
 
     while not ap.active():
         pass
