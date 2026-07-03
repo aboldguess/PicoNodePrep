@@ -68,7 +68,7 @@ except Exception as e:
                 print(f"[BOOTSTRAP] get-pip stderr:\n{res_gp.stderr}")
                 try:
                     os.remove(temp_pip_py)
-                except:
+                except Exception:
                     pass
                 if res_gp.returncode != 0:
                     raise RuntimeError("get-pip.py exited with non-zero status")
@@ -244,9 +244,20 @@ import re
 import sys
 
 print('Booting custom UF2 configuration...')
-print('Press Ctrl-C within 3 seconds to cancel boot and enter REPL...')
-time.sleep(3)
+print('Press Ctrl-C within 5 seconds to cancel boot and enter REPL...')
+try:
+    time.sleep(5)
+except KeyboardInterrupt:
+    print('Boot cancelled. Entering REPL.')
+    sys.exit(0)
 
+# Load AP config values with defaults
+ap_config = {{"ssid": "{ap_ssid}", "password": "{ap_password}", "setup_ip": "{setup_ip}"}}
+try:
+    with open("ap_config.json", "r") as f:
+        ap_config.update(json.load(f))
+except Exception:
+    pass
 
 def connect_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
@@ -267,28 +278,32 @@ def connect_wifi(ssid, password):
         print("IP info:", wlan.ifconfig())
         return True
 
-def start_ap_portal(ap_ssid, ap_password):
+def start_ap_portal(ap_ssid, ap_password, setup_ip):
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
+    ap.ifconfig((setup_ip, '255.255.255.0', setup_ip, '8.8.8.8'))
     try:
         ap.config(essid=ap_ssid, password=ap_password, security=3 if len(ap_password) >= 8 else 0)
-    except:
+    except Exception:
         ap.config(essid=ap_ssid, password=ap_password)
 
     while not ap.active():
         pass
     print("Access Point Active:", ap.ifconfig())
+    print("SSID:", ap_ssid)
+    print("Password:", ap_password)
+    print("Portal IP Address:", setup_ip)
     
-    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
-    s = socket.socket()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(addr)
+    s.bind(('', 80))
     s.listen(1)
     print("Listening for setup connections on port 80")
     
     while True:
         try:
             conn, addr = s.accept()
+            conn.settimeout(3.0)
             print("Client connected from", addr)
             request = conn.recv(1024).decode('utf-8', 'ignore')
             
@@ -311,7 +326,7 @@ def start_ap_portal(ap_ssid, ap_password):
                                 res += bytes([ord(val[i])])
                                 i += 1
                         return res.decode("utf-8", "ignore")
-                    except:
+                    except Exception:
                         return val
                         
                 new_ssid = urldecode(ssid_match.group(1)) if ssid_match else ""
@@ -349,14 +364,14 @@ def start_ap_portal(ap_ssid, ap_password):
             print("Socket handler error:", e)
             try:
                 conn.close()
-            except:
+            except Exception:
                 pass
 
 config = {{}}
 try:
     with open("wifi.json", "r") as f:
         config = json.load(f)
-except:
+except Exception:
     pass
     
 connected = False
@@ -365,7 +380,7 @@ if "ssid" in config and config["ssid"]:
     
 if not connected:
     print("No saved networks or connection failed. Falling back to configuration AP.")
-    start_ap_portal("{ap_ssid}", "{ap_password}")
+    start_ap_portal(ap_config["ssid"], ap_config["password"], ap_config["setup_ip"])
 """
 
     main_py_content = f"""import time
@@ -380,10 +395,18 @@ def sync_time():
         print("NTP sync failed:", e)
 
 def main():
+    import sys
+    print("Press Ctrl-C within 3 seconds to cancel boot and enter REPL...")
+    try:
+        time.sleep(3)
+    except KeyboardInterrupt:
+        print("Boot cancelled. Entering REPL.")
+        sys.exit(0)
+        
     print("Starting Main Script")
     try:
         led = machine.Pin("LED", machine.Pin.OUT)
-    except:
+    except Exception:
         led = machine.Pin(25, machine.Pin.OUT)
         
     led.off()
