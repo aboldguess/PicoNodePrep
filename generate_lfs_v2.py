@@ -466,6 +466,15 @@ if __name__ == "__main__":
     if "ap_config.json" not in user_files:
         user_files["ap_config.json"] = json.dumps({"ssid": ap_ssid, "password": ap_password, "setup_ip": setup_ip}).encode("utf-8")
 
+
+    meta_path = output_path + ".meta.json"
+    try:
+        import base64
+        with open(meta_path, "w") as fm:
+            json.dump({k: base64.b64encode(v).decode("utf-8") for k, v in user_files.items()}, fm)
+    except Exception as e:
+        print("Failed to write meta JSON:", e)
+
     for filename, content_bytes in user_files.items():
         with fs.open(filename, "wb") as f:
             f.write(content_bytes)
