@@ -221,10 +221,16 @@ def main():
 
     base_uf2_path = download_base_uf2(board)
 
-    cfg = {
-        "fs_size": 1441792,
-        "fs_offset": 0x140000,
-    }
+    if board == "RPI_PICO2_W":
+        cfg = {
+            "fs_size": 3145728,
+            "fs_offset": 0x100000,
+        }
+    else:
+        cfg = {
+            "fs_size": 1048576,
+            "fs_offset": 0x100000,
+        }
 
     if board == "RPI_PICO2_W":
         cfg["fs_offset"] = 0x200000
@@ -235,8 +241,12 @@ import machine
 import json
 import socket
 import re
+import sys
 
 print('Booting custom UF2 configuration...')
+print('Press Ctrl-C within 3 seconds to cancel boot and enter REPL...')
+time.sleep(3)
+
 
 def connect_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
@@ -259,8 +269,12 @@ def connect_wifi(ssid, password):
 
 def start_ap_portal(ap_ssid, ap_password):
     ap = network.WLAN(network.AP_IF)
-    ap.config(essid=ap_ssid, password=ap_password)
     ap.active(True)
+    try:
+        ap.config(essid=ap_ssid, password=ap_password, security=3 if len(ap_password) >= 8 else 0)
+    except:
+        ap.config(essid=ap_ssid, password=ap_password)
+
     while not ap.active():
         pass
     print("Access Point Active:", ap.ifconfig())

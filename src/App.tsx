@@ -45,6 +45,7 @@ export default function App() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [compilerLog, setCompilerLog] = useState<string>("Ready.");
   const [compileResult, setCompileResult] = useState<CompileResponse | null>(null);
+  const [labelDataUrl, setLabelDataUrl] = useState<string>("");
   
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -461,6 +462,18 @@ export default function App() {
                 <div className="text-xs text-slate-400 font-mono">
                   File: {compileResult.filename} ({compileResult.fileSizeKb} KB)
                 </div>
+                
+                {labelDataUrl && (
+                  <div className="mt-6 pt-6 border-t border-emerald-800/50">
+                    <h4 className="text-sm font-semibold text-emerald-300 mb-3 flex items-center gap-2">
+                      <FileBox className="h-4 w-4" />
+                      Device Label Preview
+                    </h4>
+                    <div className="bg-white rounded-lg p-2 inline-block shadow-lg">
+                      <img src={labelDataUrl} alt="Device Label" className="w-[400px] h-auto rounded" style={{ maxWidth: '100%' }} />
+                    </div>
+                  </div>
+                )}
                 {compileResult?.individualFiles && Object.keys(compileResult.individualFiles).length > 0 && (
                   <div className="mt-6 pt-6 border-t border-emerald-800/50">
                     <h4 className="text-sm font-semibold text-emerald-300 mb-3 flex items-center gap-2">
