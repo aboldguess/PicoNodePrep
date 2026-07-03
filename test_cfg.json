@@ -1,0 +1,7 @@
+{
+  "board": "RPI_PICO_W",
+  "ssid": "Test",
+  "password": "Test",
+  "setup_ip": "192.168.4.1",
+  "output_path": "test_output.uf2"
+}

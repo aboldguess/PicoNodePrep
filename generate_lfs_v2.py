@@ -190,43 +190,18 @@ def scrape_micropython_urls(board):
         print(f"[SCRAPER] Dynamic URL scraping failed: {e}")
         return []
 
+
 def download_base_uf2(board):
-    if not os.path.exists(CACHE_DIR):
-        os.makedirs(CACHE_DIR)
+    import os
     
-    # 1. Start with live scraped URLs
-    scraped_urls = scrape_micropython_urls(board)
-    
-    # 2. Append hardcoded ones as backup
-    hardcoded_urls = BASE_URLS.get(board, [])
-    if isinstance(hardcoded_urls, str):
-        hardcoded_urls = [hardcoded_urls]
-        
-    urls = scraped_urls + [u for u in hardcoded_urls if u not in scraped_urls]
-    
-    if not urls:
-        raise ValueError(f"Unknown board type or no download URLs found for {board}")
-        
-    local_path = os.path.join(CACHE_DIR, f"{board}.uf2")
+    local_path = f"micropython_firmware/{board}-20260406-v1.28.0.uf2"
     if os.path.exists(local_path):
+        print(f"Using local firmware for {board}: {local_path}")
         return local_path
-
-    errors = []
-    for url in urls:
-        print(f"Trying to download base firmware for {board} from {url}...")
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-            with urllib.request.urlopen(req, timeout=15) as response:
-                with open(local_path, "wb") as f:
-                    f.write(response.read())
-            print(f"Successfully downloaded base firmware for {board} from {url}")
-            return local_path
-        except Exception as e:
-            print(f"Failed to download from {url}: {e}")
-            errors.append(f"{url}: {e}")
-            continue
-
-    raise RuntimeError(f"Failed to download base firmware for {board} from all candidates. Errors:\n" + "\n".join(errors))
+        
+    print(f"Firmware for {board} not found at {local_path}, looking for fallback")
+    # if you want to keep the scraped stuff you could, but we are supposed to use local
+    raise RuntimeError(f"Firmware {local_path} not found")
 
 
 def main():
@@ -254,24 +229,14 @@ def main():
     if board == "RPI_PICO2_W":
         cfg["fs_offset"] = 0x200000
 
-    boot_py_content = """import machine
-print('Booting custom UF2 configuration...')
-"""
-
-    main_py_content = f"""import network
+    boot_py_content = f"""import network
 import time
 import machine
 import json
 import socket
 import re
 
-def sync_time():
-    try:
-        import ntptime
-        ntptime.settime()
-        print("Time synced via NTP")
-    except Exception as e:
-        print("NTP sync failed:", e)
+print('Booting custom UF2 configuration...')
 
 def connect_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
@@ -305,18 +270,13 @@ def start_ap_portal(ap_ssid, ap_password):
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(addr)
     s.listen(1)
-    print('Listening on', addr)
+    print("Listening for setup connections on port 80")
     
     while True:
         try:
             conn, addr = s.accept()
-            request_bytes = b""
-            conn.settimeout(0.5)
-            try:
-                request_bytes = conn.recv(1024)
-            except OSError:
-                pass
-            request = request_bytes.decode("utf-8", "ignore")
+            print("Client connected from", addr)
+            request = conn.recv(1024).decode('utf-8', 'ignore')
             
             if "GET /submit" in request or "POST /submit" in request:
                 ssid_match = re.search(r"[?&]ssid=([^&\s]+)", request)
@@ -348,16 +308,16 @@ def start_ap_portal(ap_ssid, ap_password):
                     try:
                         with open("wifi.json", "w") as f:
                             json.dump(wifi_cfg, f)
-                        response_html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<h1>Credentials Saved!</h1><p>Rebooting device to apply...</p>"
+                        response_html = "HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\nConnection: close\\r\\n\\r\\n<h1>Credentials Saved!</h1><p>Rebooting device to apply...</p>"
                         conn.sendall(response_html.encode("utf-8"))
                         conn.close()
                         time.sleep(1)
                         machine.reset()
                     except Exception as e:
-                        error_html = f"HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to save: {{e}}"
+                        error_html = f"HTTP/1.1 500 Internal Server Error\\r\\n\\r\\nFailed to save: {{e}}"
                         conn.sendall(error_html.encode("utf-8"))
                 else:
-                    error_html = "HTTP/1.1 400 Bad Request\r\n\r\nSSID is required"
+                    error_html = "HTTP/1.1 400 Bad Request\\r\\n\\r\\nSSID is required"
                     conn.sendall(error_html.encode("utf-8"))
                 conn.close()
             else:
@@ -368,7 +328,7 @@ def start_ap_portal(ap_ssid, ap_password):
                 except Exception as e:
                     print("Failed to read index.html:", e)
                     index_html = "<h1>Pico Wi-Fi Configurator Fallback</h1>"
-                response_html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n" + index_html
+                response_html = "HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\nConnection: close\\r\\n\\r\\n" + index_html
                 conn.sendall(response_html.encode("utf-8"))
                 conn.close()
         except Exception as e:
@@ -377,6 +337,33 @@ def start_ap_portal(ap_ssid, ap_password):
                 conn.close()
             except:
                 pass
+
+config = {{}}
+try:
+    with open("wifi.json", "r") as f:
+        config = json.load(f)
+except:
+    pass
+    
+connected = False
+if "ssid" in config and config["ssid"]:
+    connected = connect_wifi(config["ssid"], config["password"])
+    
+if not connected:
+    print("No saved networks or connection failed. Falling back to configuration AP.")
+    start_ap_portal("{ap_ssid}", "{ap_password}")
+"""
+
+    main_py_content = f"""import time
+import machine
+
+def sync_time():
+    try:
+        import ntptime
+        ntptime.settime()
+        print("Time synced via NTP")
+    except Exception as e:
+        print("NTP sync failed:", e)
 
 def main():
     print("Starting Main Script")
@@ -387,33 +374,44 @@ def main():
         
     led.off()
     
-    config = {{}}
-    try:
-        with open("wifi.json", "r") as f:
-            config = json.load(f)
-    except:
-        pass
+    print("Network connection successful!")
+    sync_time()
+    
+    print("Device is now in active state.")
+    while True:
+        # Get current time
+        t = time.localtime()
+        hour = t[3] % 12
+        if hour == 0: hour = 12
+        minute = t[4]
         
-    connected = False
-    if "ssid" in config and config["ssid"]:
-        connected = connect_wifi(config["ssid"], config["password"])
+        # Flash hours (short blinks)
+        for _ in range(hour):
+            led.on()
+            time.sleep(0.2)
+            led.off()
+            time.sleep(0.3)
+            
+        time.sleep(1.0)
         
-    if connected:
-        print("Network connection successful!")
-        sync_time()
-        print("Device is now in active state.")
-        while True:
+        # Flash tens of minutes (long blinks)
+        for _ in range(minute // 10):
             led.on()
-            time.sleep(0.05)
+            time.sleep(0.6)
             led.off()
-            time.sleep(0.1)
+            time.sleep(0.4)
+            
+        time.sleep(1.0)
+        
+        # Flash minutes (short blinks)
+        for _ in range(minute % 10):
             led.on()
-            time.sleep(0.05)
+            time.sleep(0.2)
             led.off()
-            time.sleep(10.0)
-    else:
-        print("No saved networks or connection failed. Falling back to configuration AP.")
-        start_ap_portal("{ap_ssid}", "{ap_password}")
+            time.sleep(0.3)
+            
+        # Wait before repeating
+        time.sleep(10.0)
 
 if __name__ == "__main__":
     main()

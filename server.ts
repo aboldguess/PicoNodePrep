@@ -19,6 +19,7 @@ async function startServer() {
 
   // Serve builds statically
   app.use("/builds", express.static(BUILDS_DIR));
+  app.use("/firmware", express.static(path.join(process.cwd(), "micropython_firmware")));
 
   // Health check
   app.get("/api/health", (req, res) => {
